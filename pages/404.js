@@ -30,3 +30,4 @@ export default function Custom404() {
     </Layout>
   );
 }// 404 Page 
+"// Force rebuild 404" 
