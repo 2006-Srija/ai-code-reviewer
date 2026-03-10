@@ -2,17 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'github.com',
-      },
-      {
-        protocol: 'https',
-        hostname: 'avatars.githubusercontent.com',
-      },
-    ],
+    domains: ['github.com', 'avatars.githubusercontent.com'],
   },
+  output: 'standalone', // Add this for Vercel
 }
 
 module.exports = nextConfig
