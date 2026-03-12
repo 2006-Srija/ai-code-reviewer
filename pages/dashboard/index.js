@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import Layout from '../../components/layout/Layout';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -12,8 +13,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (session) {
       fetchDashboardData();
+    } else if (status !== 'loading') {
+      window.location.href = '/api/auth/signin';
     }
-  }, [session]);
+  }, [session, status]);
 
   async function fetchDashboardData() {
     try {
@@ -25,7 +28,6 @@ export default function Dashboard() {
       const reviewsData = await reviewsRes.json();
       const statsData = await statsRes.json();
       
-      console.log('📚 Reviews from DynamoDB:', reviewsData); // Debug log
       setReviews(reviewsData);
       setStats(statsData);
     } catch (error) {
@@ -36,117 +38,77 @@ export default function Dashboard() {
   }
 
   if (status === 'loading' || loading) return <LoadingSpinner />;
-  
-  if (!session) {
-    return (
-      <Layout>
-        <div style={{ textAlign: 'center', padding: '50px' }}>
-          <h1>Please Login</h1>
-          <p>You need to be logged in to view your dashboard.</p>
-          <a href="/api/auth/signin" style={{
-            background: '#2ea44f',
-            color: 'white',
-            padding: '12px 24px',
-            borderRadius: '6px',
-            textDecoration: 'none',
-            display: 'inline-block',
-            marginTop: '20px'
-          }}>
-            Login with GitHub
-          </a>
-        </div>
-      </Layout>
-    );
-  }
 
   return (
     <Layout>
-      <div style={{ padding: '30px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>📊 Welcome, {session.user.name}</h1>
-          <img 
-            src={session.user.image} 
-            alt="Profile" 
-            style={{ width: '50px', height: '50px', borderRadius: '50%' }}
-          />
+      <div className="container" style={{ padding: '2rem 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '2rem', fontWeight: '700' }}>Dashboard</h1>
+          {session?.user && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <span style={{ color: '#64748b' }}>{session.user.name}</span>
+              <img src={session.user.image} alt="avatar" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+            </div>
+          )}
         </div>
 
-        {/* Stats Cards */}
         {stats && (
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '20px',
-            margin: '30px 0'
-          }}>
-            <div style={{ background: '#f0f0f0', padding: '20px', borderRadius: '8px' }}>
-              <h3>Total PRs</h3>
-              <p style={{ fontSize: '32px', fontWeight: 'bold' }}>{stats.totalPRs || 0}</p>
+          <div className="grid" style={{ marginBottom: '3rem' }}>
+            <div className="card">
+              <h3 style={{ fontSize: '1rem', color: '#64748b' }}>Total PRs</h3>
+              <p style={{ fontSize: '2rem', fontWeight: '700', color: '#2563eb' }}>{stats.totalPRs}</p>
             </div>
-            <div style={{ background: '#f0f0f0', padding: '20px', borderRadius: '8px' }}>
-              <h3>Bugs Found</h3>
-              <p style={{ fontSize: '32px', fontWeight: 'bold' }}>{stats.totalBugs || 0}</p>
+            <div className="card">
+              <h3 style={{ fontSize: '1rem', color: '#64748b' }}>Bugs Found</h3>
+              <p style={{ fontSize: '2rem', fontWeight: '700', color: '#dc2626' }}>{stats.totalBugs}</p>
             </div>
-            <div style={{ background: '#f0f0f0', padding: '20px', borderRadius: '8px' }}>
-              <h3>Avg Score</h3>
-              <p style={{ fontSize: '32px', fontWeight: 'bold' }}>{stats.avgScore || 0}%</p>
-            </div>
-            <div style={{ background: '#f0f0f0', padding: '20px', borderRadius: '8px' }}>
-              <h3>Usage</h3>
-              <p style={{ fontSize: '32px', fontWeight: 'bold' }}>{stats.used || 0}/{stats.limit || 100}</p>
+            <div className="card">
+              <h3 style={{ fontSize: '1rem', color: '#64748b' }}>Avg Score</h3>
+              <p style={{ fontSize: '2rem', fontWeight: '700', color: '#16a34a' }}>{stats.avgScore}%</p>
             </div>
           </div>
         )}
 
-        {/* Recent Reviews */}
-        <h2>Recent PR Reviews</h2>
+        <h2 style={{ fontSize: '1.5rem', fontWeight: '600', marginBottom: '1.5rem' }}>Recent PR Reviews</h2>
+
         {reviews.length === 0 ? (
-          <p style={{ textAlign: 'center', padding: '40px', background: '#f9f9f9', borderRadius: '8px' }}>
-            No reviews yet. Connect a GitHub repo to get started!
-          </p>
+          <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+            <p style={{ color: '#64748b', marginBottom: '1rem' }}>No reviews yet. Create a PR to get started!</p>
+            <Link href="/docs" className="btn btn-secondary">Learn how →</Link>
+          </div>
         ) : (
-          <div style={{ marginTop: '20px' }}>
-            {reviews.map(review => {
-              console.log('🔍 Rendering review:', review); // Debug log
-              return (
-                <div key={review.createdAt} style={{
-                  border: '1px solid #e1e4e8',
-                  borderRadius: '8px',
-                  padding: '20px',
-                  margin: '10px 0',
-                  background: 'white'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <h3>{review.repo}#{review.prNumber}</h3>
-                    <span style={{
-                      background: review.score > 80 ? '#2ea44f' : review.score > 60 ? '#f9c513' : '#cb2431',
-                      color: 'white',
-                      padding: '4px 12px',
-                      borderRadius: '20px'
-                    }}>
-                      Score: {review.score}%
-                    </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {reviews.map((review) => (
+              <div key={review.createdAt} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: '600' }}>{review.repo} #{review.prNumber}</h3>
+                    <p style={{ fontSize: '0.875rem', color: '#64748b' }}>
+                      {new Date(review.createdAt).toLocaleDateString()}
+                    </p>
                   </div>
-                  <p>Issues: {review.bugs?.length || 0}</p>
-                  <button 
-                    onClick={() => window.location.href = `/dashboard/${review.createdAt}`}
-                    style={{
-                      background: '#0366d6',
-                      color: 'white',
-                      border: 'none',
-                      padding: '8px 16px',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    View Details →
-                  </button>
+                  <span style={{
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.875rem',
+                    fontWeight: '500',
+                    background: review.score > 80 ? '#dcfce7' : review.score > 50 ? '#fef9c3' : '#fee2e2',
+                    color: review.score > 80 ? '#166534' : review.score > 50 ? '#854d0e' : '#991b1b',
+                  }}>
+                    Score: {review.score}%
+                  </span>
                 </div>
-              );
-            })}
+                <p style={{ marginTop: '1rem', color: '#475569' }}>
+                  Issues: {review.bugs?.length || 0} bugs, {review.security?.length || 0} security, {review.performance?.length || 0} performance
+                </p>
+                <Link href={`/dashboard/${review.createdAt}`} className="btn btn-secondary" style={{ marginTop: '1rem' }}>
+                  View Details →
+                </Link>
+              </div>
+            ))}
           </div>
         )}
       </div>
     </Layout>
   );
-}"// Force rebuild dashboard" 
+}

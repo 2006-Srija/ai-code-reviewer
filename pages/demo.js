@@ -16,201 +16,191 @@ export default function Demo() {
 
   const analyzeCode = async () => {
     setLoading(true);
-    try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, language })
-      });
-      const data = await response.json();
-      setReview(data);
-    } catch (error) {
-      console.error('Analysis failed:', error);
-      setReview({
-        bugs: [{ line: 1, message: 'Error analyzing code' }],
-        security: [],
-        performance: [],
-        suggestions: ['Try again with simpler code'],
-        score: 0
-      });
-    }
-    setLoading(false);
+    // Simulate faster response (remove in production)
+    setTimeout(async () => {
+      try {
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, language })
+        });
+        const data = await response.json();
+        setReview(data);
+      } catch (error) {
+        setReview({
+          bugs: [{ line: 1, message: 'Analysis failed' }],
+          security: [],
+          performance: [],
+          suggestions: ['Try again'],
+          score: 0
+        });
+      } finally {
+        setLoading(false);
+      }
+    }, 800); // Fast feedback
   };
 
   return (
     <Layout>
-      <div style={{ padding: '30px', maxWidth: '1200px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '36px', marginBottom: '10px' }}>🎮 Live AI Code Review Demo</h1>
-        <p style={{ color: '#666', marginBottom: '30px' }}>
-          Paste your code below and see real AI analysis using CodeLlama 7B
+      <div className="container" style={{ padding: '3rem 0' }}>
+        <h1 style={{ fontSize: '2rem', fontWeight: '600', marginBottom: '0.5rem' }}>
+          Live AI Review
+        </h1>
+        <p style={{ color: '#64748b', marginBottom: '2rem' }}>
+          Paste code below — AI analyzes and gives instant feedback.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-          {/* Left side - Code input */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+          {/* Left Panel */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <label style={{ fontWeight: 'bold' }}>Your Code:</label>
-              <select 
-                value={language} 
-                onChange={(e) => setLanguage(e.target.value)}
-                style={{ padding: '5px', borderRadius: '4px' }}
-              >
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <label style={{ fontWeight: '500' }}>Your Code</label>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} style={selectStyle}>
                 <option value="javascript">JavaScript</option>
                 <option value="python">Python</option>
                 <option value="java">Java</option>
-                <option value="cpp">C++</option>
               </select>
             </div>
             <textarea
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              style={{
-                width: '100%',
-                height: '400px',
-                fontFamily: 'monospace',
-                fontSize: '14px',
-                padding: '15px',
-                borderRadius: '8px',
-                border: '2px solid #e1e4e8',
-                backgroundColor: '#f6f8fa',
-                resize: 'vertical'
-              }}
+              style={textareaStyle}
             />
             <button
               onClick={analyzeCode}
               disabled={loading}
-              style={{
-                background: loading ? '#ccc' : '#2ea44f',
-                color: 'white',
-                padding: '12px 30px',
-                border: 'none',
-                borderRadius: '6px',
-                marginTop: '15px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                width: '100%'
-              }}
+              className="btn"
+              style={{ marginTop: '1rem', width: '100%' }}
             >
-              {loading ? '🤖 AI Thinking...' : '🔍 Analyze with AI'}
+              {loading ? 'Analyzing...' : '🔍 Analyze with AI'}
             </button>
           </div>
 
-          {/* Right side - AI Review */}
+          {/* Right Panel */}
           <div>
-            <h3 style={{ marginBottom: '15px' }}>🤖 AI Review Results:</h3>
+            <h3 style={{ fontWeight: '500', marginBottom: '1rem' }}>AI Review</h3>
             {loading ? (
-              <LoadingSpinner />
+              <SkeletonLoader />
             ) : review ? (
-              <div style={{
-                background: '#f6f8fa',
-                padding: '20px',
-                borderRadius: '8px',
-                border: '1px solid #e1e4e8'
-              }}>
-                {/* Score */}
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '20px',
-                  padding: '15px',
-                  background: 'white',
-                  borderRadius: '8px'
-                }}>
-                  <span style={{ fontSize: '18px' }}>Code Quality Score:</span>
-                  <span style={{
-                    fontSize: '32px',
-                    fontWeight: 'bold',
-                    color: review.score > 80 ? '#2ea44f' : review.score > 60 ? '#f9c513' : '#cb2431'
-                  }}>
-                    {review.score}%
-                  </span>
-                </div>
-
-                {/* Bugs */}
-                {review.bugs?.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <h4 style={{ color: '#cb2431', marginBottom: '10px' }}>🐛 Bugs Found</h4>
-                    {review.bugs.map((bug, i) => (
-                      <div key={i} style={{ 
-                        background: '#ffebe9', 
-                        padding: '10px', 
-                        borderRadius: '4px',
-                        marginBottom: '5px'
-                      }}>
-                        <strong>Line {bug.line}:</strong> {bug.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Security */}
-                {review.security?.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <h4 style={{ color: '#cb2431', marginBottom: '10px' }}>🔒 Security Issues</h4>
-                    {review.security.map((sec, i) => (
-                      <div key={i} style={{ 
-                        background: '#fff8c5', 
-                        padding: '10px', 
-                        borderRadius: '4px',
-                        marginBottom: '5px'
-                      }}>
-                        <strong>Line {sec.line}:</strong> {sec.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Performance */}
-                {review.performance?.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
-                    <h4 style={{ color: '#0a4', marginBottom: '10px' }}>⚡ Performance Tips</h4>
-                    {review.performance.map((perf, i) => (
-                      <div key={i} style={{ 
-                        background: '#dafbe1', 
-                        padding: '10px', 
-                        borderRadius: '4px',
-                        marginBottom: '5px'
-                      }}>
-                        <strong>Line {perf.line}:</strong> {perf.message}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Suggestions */}
-                {review.suggestions?.length > 0 && (
-                  <div>
-                    <h4 style={{ color: '#0366d6', marginBottom: '10px' }}>💡 Suggestions</h4>
-                    {review.suggestions.map((suggestion, i) => (
-                      <div key={i} style={{ 
-                        background: '#e3f2fd', 
-                        padding: '10px', 
-                        borderRadius: '4px',
-                        marginBottom: '5px'
-                      }}>
-                        {suggestion}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="card">
+                <ScoreBadge score={review.score} />
+                <IssueSection title="🐛 Bugs" items={review.bugs} color="#dc2626" />
+                <IssueSection title="🔒 Security" items={review.security} color="#dc2626" />
+                <IssueSection title="⚡ Performance" items={review.performance} color="#16a34a" />
+                <SuggestionSection suggestions={review.suggestions} />
               </div>
             ) : (
-              <div style={{
-                background: '#f6f8fa',
-                padding: '40px',
-                borderRadius: '8px',
-                textAlign: 'center',
-                color: '#666'
-              }}>
-                <p style={{ fontSize: '18px' }}>👈 Paste your code and click analyze</p>
-                <p>The AI will review it and show results here</p>
-              </div>
+              <EmptyState />
             )}
           </div>
         </div>
       </div>
     </Layout>
   );
-}"// Force rebuild demo" 
+}
+
+// Components
+function ScoreBadge({ score }) {
+  const color = score > 80 ? '#16a34a' : score > 50 ? '#ca8a04' : '#dc2626';
+  return (
+    <div style={{ marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+        <span>Quality Score</span>
+        <span style={{ fontWeight: '600', color }}>{score}%</span>
+      </div>
+      <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px' }}>
+        <div style={{ width: `${score}%`, height: '100%', background: color, borderRadius: '3px' }} />
+      </div>
+    </div>
+  );
+}
+
+function IssueSection({ title, items, color }) {
+  if (!items?.length) return null;
+  return (
+    <div style={{ marginBottom: '1.5rem' }}>
+      <h4 style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem', color }}>{title}</h4>
+      {items.map((item, i) => (
+        <div key={i} style={issueItemStyle}>
+          <span style={{ fontWeight: '500' }}>Line {item.line}:</span> {item.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SuggestionSection({ suggestions }) {
+  if (!suggestions?.length) return null;
+  return (
+    <div>
+      <h4 style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem', color: '#2563eb' }}>
+        💡 Suggestions
+      </h4>
+      {suggestions.map((s, i) => (
+        <div key={i} style={suggestionItemStyle}>
+          {s}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkeletonLoader() {
+  return (
+    <div className="card">
+      {[1,2,3].map(i => (
+        <div key={i} style={{ marginBottom: '1.5rem' }}>
+          <div style={{ height: '20px', width: '40%', background: '#e2e8f0', borderRadius: '4px', marginBottom: '0.5rem' }} />
+          <div style={{ height: '16px', width: '100%', background: '#f1f5f9', borderRadius: '4px' }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+      <p style={{ color: '#64748b' }}>Paste code and click analyze</p>
+    </div>
+  );
+}
+
+// Styles
+const selectStyle = {
+  padding: '0.5rem 1rem',
+  borderRadius: '0.5rem',
+  border: '1px solid #e2e8f0',
+  background: 'white',
+  fontSize: '0.875rem'
+};
+
+const textareaStyle = {
+  width: '100%',
+  height: '350px',
+  fontFamily: 'monospace',
+  fontSize: '14px',
+  padding: '1rem',
+  borderRadius: '0.75rem',
+  border: '1px solid #e2e8f0',
+  background: '#f8fafc',
+  resize: 'vertical'
+};
+
+const issueItemStyle = {
+  background: '#f8fafc',
+  padding: '0.75rem',
+  borderRadius: '0.5rem',
+  marginBottom: '0.5rem',
+  fontSize: '0.875rem',
+  border: '1px solid #f1f5f9'
+};
+
+const suggestionItemStyle = {
+  background: '#eff6ff',
+  padding: '0.75rem',
+  borderRadius: '0.5rem',
+  marginBottom: '0.5rem',
+  fontSize: '0.875rem',
+  color: '#1e293b'
+};
