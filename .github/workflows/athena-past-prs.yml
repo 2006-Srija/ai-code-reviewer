@@ -1,0 +1,52 @@
+name: Athena - Review Past PRs
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday at 00:00 UTC
+  workflow_dispatch:      # Manual trigger option
+
+jobs:
+  review-past-prs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install Dependencies
+        run: pip install requests
+      
+      - name: Get Closed PRs from Last 30 Days
+        id: get-prs
+        run: |
+          curl -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls?state=closed&per_page=30" > closed_prs.json
+          
+          echo "prs=$(cat closed_prs.json | jq -c '[.[] | {number: .number, url: .html_url}]')" >> $GITHUB_OUTPUT
+      
+      - name: Review Each Past PR
+        env:
+          ATHENA_URL: "https://your-app.vercel.app/api/athena"
+        run: |
+          echo '${{ steps.get-prs.outputs.prs }}' | jq -c '.[]' | while read pr; do
+            PR_URL=$(echo $pr | jq -r '.url')
+            PR_NUMBER=$(echo $pr | jq -r '.number')
+            
+            echo "Reviewing past PR #$PR_NUMBER"
+            
+            curl -X POST $ATHENA_URL \
+              -H "Content-Type: application/json" \
+              -d "{\"prUrl\": \"$PR_URL\"}" \
+              || echo "Failed to review PR #$PR_NUMBER"
+          done

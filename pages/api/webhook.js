@@ -1,6 +1,5 @@
 import { saveReviewToDynamoDB } from '../../lib/dynamodb.service.js';
 import { GitHubAPI } from '../../lib/github/githubApi';
-import { reviewCode } from '../../lib/ai/reviewer';
 import { withErrorHandler } from '../../lib/utils/errorHandler';
 
 async function handler(req, res) {
@@ -25,13 +24,49 @@ async function handler(req, res) {
   res.status(200).json({ message: 'Event ignored' });
 }
 
+async function callAthenaReview(code, filename) {
+  try {
+    // Call Athena API locally
+    const response = await fetch('http://localhost:3000/api/athena', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, filename })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Athena API returned ${response.status}`);
+    }
+    
+    const review = await response.json();
+    return review;
+  } catch (error) {
+    console.error('Athena review failed, using fallback:', error.message);
+    // Fallback mock review
+    return {
+      score: 75,
+      total_issues: 1,
+      findings: [
+        {
+          agent: "Quality Agent",
+          file: filename,
+          line: 1,
+          severity: "low",
+          title: "Code review pending",
+          description: "Athena service unavailable, using basic review",
+          suggestion: "Check Athena service status",
+          fix: ""
+        }
+      ]
+    };
+  }
+}
+
 async function processPullRequest(payload) {
   const { repository, pull_request } = payload;
   const github = new GitHubAPI(process.env.GITHUB_TOKEN);
   
   console.log(`🔍 Analyzing PR #${pull_request.number} in ${repository.full_name}`);
   
-  // DEBUG: Log user information to see what IDs are available
   console.log('🔍 DEBUG - Pull Request User Object:', {
     id: pull_request.user.id,
     login: pull_request.user.login,
@@ -48,18 +83,20 @@ async function processPullRequest(payload) {
   let comments = [];
   let totalScore = 0;
   let fileCount = 0;
+  let allFindings = [];
   
   for (const file of files) {
     if (file.filename.match(/\.(js|jsx|ts|tsx|py|java|cpp|go|rb|php)$/)) {
       console.log(`📄 Reviewing: ${file.filename}`);
       
       const content = await github.getFileContent(file.contents_url);
-      const review = await reviewCode(content, file.filename);
       
-      // SAVE TO DYNAMODB - FIXED WITH CORRECT USER ID
+      // Call Athena for code review
+      const review = await callAthenaReview(content, file.filename);
+      
+      // SAVE TO DYNAMODB
       try {
-        // IMPORTANT: Using the userId from your debug-user output
-        const userId = "180918195"; // Your actual session userId
+        const userId = "180918195";
         console.log(`🔍 DEBUG - Saving review for userId: ${userId}`);
         console.log(`🔍 DEBUG - Review data:`, {
           repo: repository.full_name,
@@ -76,14 +113,15 @@ async function processPullRequest(payload) {
         console.log(`✅ Review saved to DynamoDB for ${file.filename}`);
       } catch (dbError) {
         console.error('❌ Failed to save review to DynamoDB:', dbError);
-        console.error('❌ Error details:', dbError.message);
       }
       
-      if (review.bugs?.length || review.security?.length || review.performance?.length) {
+      // Format findings for comment
+      if (review.findings && review.findings.length > 0) {
         comments.push({
           file: file.filename,
           review: review
         });
+        allFindings.push(...review.findings);
       }
       
       totalScore += review.score;
@@ -93,7 +131,7 @@ async function processPullRequest(payload) {
   
   if (comments.length > 0) {
     const avgScore = fileCount > 0 ? Math.round(totalScore / fileCount) : 0;
-    const comment = formatPRComment(comments, avgScore);
+    const comment = formatPRComment(comments, avgScore, allFindings);
     
     await github.postComment(
       repository.owner.login,
@@ -106,34 +144,63 @@ async function processPullRequest(payload) {
   console.log('✅ PR review complete!');
 }
 
-function formatPRComment(comments, avgScore) {
-  let text = `## 🤖 AI Code Review Results\n\n`;
+function formatPRComment(comments, avgScore, allFindings) {
+  let text = `## 🦉 Athena AI Code Review\n\n`;
   text += `**Overall Score: ${avgScore}/100**\n\n`;
   
-  for (const item of comments) {
-    text += `### 📁 ${item.file}\n`;
-    text += `Score: ${item.review.score}/100\n\n`;
-    
-    if (item.review.bugs?.length) {
-      text += `**🐛 Bugs:**\n`;
-      item.review.bugs.forEach(b => text += `- Line ${b.line}: ${b.message}\n`);
-      text += `\n`;
-    }
-    
-    if (item.review.security?.length) {
-      text += `**🔒 Security:**\n`;
-      item.review.security.forEach(s => text += `- Line ${s.line}: ${s.message}\n`);
-      text += `\n`;
-    }
-    
-    if (item.review.performance?.length) {
-      text += `**⚡ Performance:**\n`;
-      item.review.performance.forEach(p => text += `- Line ${p.line}: ${p.message}\n`);
-      text += `\n`;
-    }
+  // Group findings by severity
+  const critical = allFindings.filter(f => f.severity === 'critical');
+  const high = allFindings.filter(f => f.severity === 'high');
+  const medium = allFindings.filter(f => f.severity === 'medium');
+  const low = allFindings.filter(f => f.severity === 'low');
+  
+  if (critical.length > 0) {
+    text += `### 🔴 Critical Issues (Must Fix)\n`;
+    critical.forEach(f => {
+      text += `- **${f.agent}** : ${f.title}\n`;
+      if (f.fix) text += `  - 💡 Fix: \`${f.fix}\`\n`;
+    });
+    text += `\n`;
   }
   
-  text += `---\n*Powered by AI Code Reviewer*`;
+  if (high.length > 0) {
+    text += `### 🟠 High Severity\n`;
+    high.forEach(f => {
+      text += `- **${f.agent}** : ${f.title}\n`;
+      if (f.fix) text += `  - 💡 Fix: \`${f.fix}\`\n`;
+    });
+    text += `\n`;
+  }
+  
+  if (medium.length > 0) {
+    text += `### 🟡 Medium Severity\n`;
+    medium.forEach(f => {
+      text += `- **${f.agent}** : ${f.title}\n`;
+    });
+    text += `\n`;
+  }
+  
+  if (low.length > 0) {
+    text += `### 🔵 Low Severity / Suggestions\n`;
+    low.forEach(f => {
+      text += `- **${f.agent}** : ${f.title}\n`;
+    });
+    text += `\n`;
+  }
+  
+  // File-wise breakdown
+  text += `### 📁 File-wise Breakdown\n`;
+  for (const item of comments) {
+    text += `**${item.file}** (Score: ${item.review.score}/100)\n`;
+    if (item.review.findings && item.review.findings.length > 0) {
+      item.review.findings.forEach(f => {
+        text += `- ${f.title} (${f.severity})\n`;
+      });
+    }
+    text += `\n`;
+  }
+  
+  text += `---\n*Powered by Athena — Code Intelligence Platform*`;
   return text;
 }
 

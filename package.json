@@ -1,7 +1,7 @@
 {
-  "name": "ai-code-reviewer",
+  "name": "Athena",
   "version": "1.0.0",
-  "description": "AI-powered GitHub PR reviewer",
+  "description": "Code Intelligence Platform",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
