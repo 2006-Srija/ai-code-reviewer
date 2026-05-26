@@ -1,18 +1,6 @@
-# Core AI/ML - REMOVED torch and sentence-transformers
 google-generativeai>=0.7.0
 langgraph>=0.4.0
 langchain>=0.3.0
-
-# Code Analysis
-tree-sitter>=0.20.0
-ast-comments>=1.0.0
-pygments>=2.17.0
-pylint>=3.0.0
-radon>=6.0.0
-bandit>=1.7.0
-
-# Utilities
 numpy>=1.24.0
 pandas>=2.0.0
-tqdm>=4.65.0
-requests>=2.31.0
+flask>=2.3.0
