@@ -1,213 +1,68 @@
-import { saveReviewToDynamoDB } from '../../lib/dynamodb.service.js';
-import { GitHubAPI } from '../../lib/github/githubApi';
-import { withErrorHandler } from '../../lib/utils/errorHandler';
+ 
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-async function handler(req, res) {
+const execAsync = promisify(exec);
+
+export default async function handler(req, res) {
+  // Only accept POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Get GitHub event type from headers
   const event = req.headers['x-github-event'];
-  const payload = req.body;
-
-  console.log(`📢 GitHub Event: ${event}`);
-
-  if (event === 'pull_request' && 
-      (payload.action === 'opened' || payload.action === 'synchronize')) {
-    
-    // Process in background without blocking response
-    processPullRequest(payload).catch(console.error);
-    
-    return res.status(200).json({ received: true });
+  
+  // Handle webhook ping (GitHub sends this when configuring webhook)
+  if (event === 'ping') {
+    console.log('✅ Webhook configured successfully!');
+    return res.status(200).json({ message: 'Webhook is alive!' });
   }
-
-  res.status(200).json({ message: 'Event ignored' });
-}
-
-async function callAthenaReview(code, filename) {
-  try {
-    // Call Athena API with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes timeout
+  
+  // Handle pull request events
+  if (event === 'pull_request') {
+    const payload = req.body;
+    const action = payload.action;
+    const prNumber = payload.pull_request.number;
+    const repoName = payload.repository.full_name;
+    const prTitle = payload.pull_request.title;
+    const prUrl = payload.pull_request.html_url;
     
-    const response = await fetch('http://localhost:3000/api/athena', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, filename }),
-      signal: controller.signal
-    });
+    console.log(`📦 PR ${action}: ${repoName}#${prNumber} - ${prTitle}`);
     
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Athena API returned ${response.status}`);
-    }
-    
-    const review = await response.json();
-    return review;
-  } catch (error) {
-    console.error('Athena review failed:', error.message);
-    // Enhanced fallback with intelligent analysis
-    return {
-      score: 70,
-      total_issues: 1,
-      findings: [
-        {
-          agent: "Quality Agent",
-          file: filename,
-          line: 1,
-          severity: "low",
-          title: "Basic analysis only",
-          description: "Deep analysis temporarily unavailable",
-          suggestion: "Check if Athena service is running",
-          fix: ""
-        }
-      ]
-    };
-  }
-}
-
-async function processPullRequest(payload) {
-  const { repository, pull_request } = payload;
-  const github = new GitHubAPI(process.env.GITHUB_TOKEN);
-  
-  console.log(`🔍 Analyzing PR #${pull_request.number} in ${repository.full_name}`);
-  
-  console.log('🔍 DEBUG - Pull Request User Object:', {
-    id: pull_request.user.id,
-    login: pull_request.user.login,
-    node_id: pull_request.user.node_id,
-    type: pull_request.user.type
-  });
-  
-  const files = await github.getPRFiles(
-    repository.owner.login,
-    repository.name,
-    pull_request.number
-  );
-  
-  let comments = [];
-  let totalScore = 0;
-  let fileCount = 0;
-  let allFindings = [];
-  
-  for (const file of files) {
-    if (file.filename.match(/\.(js|jsx|ts|tsx|py|java|cpp|go|rb|php)$/)) {
-      console.log(`📄 Reviewing: ${file.filename}`);
+    // Only review when PR is opened or synchronized (new commits)
+    if (action === 'opened' || action === 'synchronize') {
+      console.log(`🔍 Starting code review for PR #${prNumber}...`);
       
-      const content = await github.getFileContent(file.contents_url);
-      
-      // Call Athena for code review
-      const review = await callAthenaReview(content, file.filename);
-      
-      // SAVE TO DYNAMODB
       try {
-        const userId = "180918195";
-        console.log(`🔍 DEBUG - Saving review for userId: ${userId}`);
-        console.log(`🔍 DEBUG - Review data:`, {
-          repo: repository.full_name,
-          prNumber: pull_request.number,
-          score: review.score
-        });
+        // Fetch the PR diff from GitHub
+        const token = process.env.GITHUB_TOKEN;
+        const apiUrl = `https://api.github.com/repos/${repoName}/pulls/${prNumber}`;
         
-        await saveReviewToDynamoDB(
-          userId,
-          repository.full_name,
-          pull_request.number,
-          review
-        );
-        console.log(`✅ Review saved to DynamoDB for ${file.filename}`);
-      } catch (dbError) {
-        console.error('❌ Failed to save review to DynamoDB:', dbError);
+        const { stdout } = await execAsync(`curl -s -H "Authorization: token ${token}" ${apiUrl}`);
+        const prData = JSON.parse(stdout);
+        const diffUrl = prData.diff_url;
+        
+        // Get the actual code changes
+        const { stdout: diff } = await execAsync(`curl -s ${diffUrl}`);
+        
+        // Analyze with security agent
+        const { stdout: analysis } = await execAsync(`echo "${diff.replace(/"/g, '\\"')}" | python python_api.py review security`);
+        
+        // Post comment back to GitHub PR
+        const comment = `## 🤖 AI Code Review Results\n\n${analysis}`;
+        await execAsync(`curl -s -X POST -H "Authorization: token ${token}" -H "Accept: application/vnd.github.v3+json" ${apiUrl}/comments -d '{"body": ${JSON.stringify(comment)}}'`);
+        
+        console.log(`✅ Review posted to PR #${prNumber}`);
+      } catch (error) {
+        console.error(`❌ Review failed for PR #${prNumber}:`, error.message);
       }
-      
-      // Format findings for comment
-      if (review.findings && review.findings.length > 0) {
-        comments.push({
-          file: file.filename,
-          review: review
-        });
-        allFindings.push(...review.findings);
-      }
-      
-      totalScore += review.score;
-      fileCount++;
     }
-  }
-  
-  if (comments.length > 0) {
-    const avgScore = fileCount > 0 ? Math.round(totalScore / fileCount) : 0;
-    const comment = formatPRComment(comments, avgScore, allFindings);
     
-    await github.postComment(
-      repository.owner.login,
-      repository.name,
-      pull_request.number,
-      comment
-    );
+    return res.status(200).json({ received: true, action });
   }
   
-  console.log('✅ PR review complete!');
+  // Other events (just log them)
+  console.log(`📝 Received event: ${event}`);
+  res.status(200).json({ event });
 }
-
-function formatPRComment(comments, avgScore, allFindings) {
-  let text = `## 🦉 Athena AI Code Review\n\n`;
-  text += `**Overall Score: ${avgScore}/100**\n\n`;
-  
-  // Group findings by severity
-  const critical = allFindings.filter(f => f.severity === 'critical');
-  const high = allFindings.filter(f => f.severity === 'high');
-  const medium = allFindings.filter(f => f.severity === 'medium');
-  const low = allFindings.filter(f => f.severity === 'low');
-  
-  if (critical.length > 0) {
-    text += `### 🔴 Critical Issues (Must Fix)\n`;
-    critical.forEach(f => {
-      text += `- **${f.agent}** : ${f.title}\n`;
-      if (f.fix) text += `  - 💡 Fix: \`${f.fix}\`\n`;
-    });
-    text += `\n`;
-  }
-  
-  if (high.length > 0) {
-    text += `### 🟠 High Severity\n`;
-    high.forEach(f => {
-      text += `- **${f.agent}** : ${f.title}\n`;
-      if (f.fix) text += `  - 💡 Fix: \`${f.fix}\`\n`;
-    });
-    text += `\n`;
-  }
-  
-  if (medium.length > 0) {
-    text += `### 🟡 Medium Severity\n`;
-    medium.forEach(f => {
-      text += `- **${f.agent}** : ${f.title}\n`;
-    });
-    text += `\n`;
-  }
-  
-  if (low.length > 0) {
-    text += `### 🔵 Low Severity / Suggestions\n`;
-    low.forEach(f => {
-      text += `- **${f.agent}** : ${f.title}\n`;
-    });
-    text += `\n`;
-  }
-  
-  // File-wise breakdown
-  text += `### 📁 File-wise Breakdown\n`;
-  for (const item of comments) {
-    text += `**${item.file}** (Score: ${item.review.score}/100)\n`;
-    if (item.review.findings && item.review.findings.length > 0) {
-      item.review.findings.forEach(f => {
-        text += `- ${f.title} (${f.severity})\n`;
-      });
-    }
-    text += `\n`;
-  }
-  
-  text += `---\n*Powered by Athena — Code Intelligence Platform*`;
-  return text;
-}
-
-export default withErrorHandler(handler);
